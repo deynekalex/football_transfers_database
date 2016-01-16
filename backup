@@ -1,0 +1,133 @@
+--Cascade <=> Automatically drop objects that depend on the table (such as views).
+DROP TABLE IF EXISTS championship CASCADE;
+DROP TABLE IF EXISTS team CASCADE;
+DROP TABLE IF EXISTS player CASCADE;
+DROP TABLE IF EXISTS contract CASCADE;
+DROP TABLE IF EXISTS citizenship CASCADE;
+DROP TABLE IF EXISTS player_citizenship CASCADE;
+DROP TYPE football_positions;
+
+--create types
+CREATE TYPE football_positions AS ENUM ('GK', 'SW', 'CB', 'LB', 'RB', 'LWB', 'RWB', 'DM', 'CM', 'AM', 'LW', 'RW', 'WF','CF','SS');
+/*DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'football_positions') THEN
+CREATE TYPE football_positions AS ENUM('GK','SW','CB','LB','RB','LWB','RWB','DM','CM','AM','LW','RW','WF');
+    END IF;
+END$$;*/
+
+--create tables
+CREATE TABLE championship (
+  chId          SERIAL,
+  cNAME         VARCHAR(100) NOT NULL,
+  pre_season_starts DATE         NOT NULL,
+  pre_season_ends   DATE         NOT NULL,
+  mid_season_starts DATE         NOT NULL,
+  mid_season_ends   DATE         NOT NULL,
+  CHECK ((championship.mid_season_ends-championship.mid_season_starts)<=28),
+  CHECK ((championship.pre_season_ends-championship.pre_season_starts)<=84),
+  CONSTRAINT championship_pk PRIMARY KEY (chId)
+);
+
+CREATE TABLE team (
+  tId             SERIAL,
+  tName           VARCHAR(100) NOT NULL,
+  transfer_budget INT          NOT NULL CHECK (transfer_budget >= 0),
+  chId            INT,
+
+  CONSTRAINT team_pk PRIMARY KEY (tid),
+  FOREIGN KEY (chId) REFERENCES championship (chId) ON UPDATE CASCADE ON DELETE SET NULL
+  --Если нац. чеспионат удаляется, то устанавливаем его NULL, что означает, что клуб пока не зарегестрирован ни в каком чеспионате
+);
+
+CREATE TABLE player (
+  pId           SERIAL,
+  pName         VARCHAR(100)       NOT NULL,
+  date_of_birth DATE               NOT NULL,
+  position      football_positions NOT NULL,
+  tId           INT,
+  est_price INT NOT NULL CHECK (est_price >= 0),
+  --id команды, которой он принадлежит(не аренда!!!)
+  CONSTRAINT player_pk PRIMARY KEY (pId),
+  FOREIGN KEY (tid) REFERENCES team (tId) ON UPDATE CASCADE ON DELETE SET NULL
+  -- Если клуб удаляется, то устанавливаем NULL, что означает отсутствие клуба у игрока
+);
+
+CREATE TABLE citizenship(
+  ciId SERIAL,
+  ciName VARCHAR(50) NOT NULL,
+  CONSTRAINT citizenship_pk PRIMARY KEY (ciId)
+);
+
+CREATE TABLE player_citizenship(
+  pId INT NOT NULL,
+  ciId INT NOT NULL,
+
+  FOREIGN KEY (pId) REFERENCES player (pId) ON UPDATE CASCADE ON DELETE CASCADE,
+  FOREIGN KEY (ciId) REFERENCES citizenship (ciId) ON UPDATE CASCADE ON DELETE CASCADE
+  --если игрок или гражданство перестало существовать, то и не храним запись
+);
+
+CREATE TABLE contract(
+  coId SERIAL,
+  fromId INT,
+  toId INT NOT NULL,
+  pId INT NOT NULL,
+  salary INT NOT NULL CHECK (salary >= 0),
+  signed DATE NOT NULL,
+  ended DATE NOT NULL,
+  price INT CHECK (price >= 0),
+  isLoan BOOLEAN NOT NULL,
+
+  CONSTRAINT contract_pk PRIMARY KEY (coId),
+  FOREIGN KEY (fromId) REFERENCES team (tId) ON UPDATE CASCADE ON DELETE NO ACTION ,
+  FOREIGN KEY (toId) REFERENCES team (tId) ON UPDATE CASCADE ON DELETE NO ACTION ,
+  FOREIGN KEY (pId) REFERENCES player (pId) ON UPDATE CASCADE ON DELETE NO ACTION
+  --если клубы или игрок удаляется, то контракт все равно сохраняется.
+);
+
+/*create or replace function check_transfer_periods() returns trigger as
+$BODY$
+BEGIN
+  if ((new.pre_season_starts - new.pre_season_ends) < 84 AND ) THEN
+    return new;
+  else
+    return old;
+  END IF;
+END
+$BODY$ LANGUAGE 'plpgsql';*/
+
+
+/*create or replace function check_mark() returns trigger as
+$BODY$
+BEGIN
+    if (new.mark >= old.mark) then
+        return new;
+    else
+        return old;
+    end if;
+
+END
+$BODY$ LANGUAGE 'plpgsql';
+
+
+--triggers
+CREATE TRIGGER trigger1 BEFORE INSERT OR UPDATE ON championship FOR EACH ROW EXECUTE PROCEDURE check_transfer_periods();*/
+
+
+--insert data
+COPY championship FROM '/home/deynekalex/Desktop/databases/footballtransfers/championship.csv' DELIMITER ',' CSV;
+
+COPY team FROM '/home/deynekalex/Desktop/databases/footballtransfers/team.csv' DELIMITER ',' CSV;
+
+COPY player FROM '/home/deynekalex/Desktop/databases/footballtransfers/player.csv' DELIMITER ',' CSV;
+
+COPY citizenship FROM '/home/deynekalex/Desktop/databases/footballtransfers/citizenship.csv' DELIMITER ',' CSV;
+
+COPY contract FROM '/home/deynekalex/Desktop/databases/footballtransfers/contract.csv' DELIMITER ','  CSV ;
+
+SELECT * FROM championship;
+SELECT * FROM team WHERE transfer_budget > 100000000;
+SELECT * FROM player;
+SELECT * FROM citizenship;
+SELECT * FROM contract;
